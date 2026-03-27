@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
+    },
+    "Portfolio": {
+      "title": "Portfolio",
+      "description": "A user's investment portfolio",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "currency": { "type": "string", "enum": ["USD", "INR"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "currency", "createdAt"]
+    },
+    "Holding": {
+      "title": "Holding",
+      "description": "An asset held in a portfolio",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "portfolioId": { "type": "string" },
+        "symbol": { "type": "string" },
+        "exchange": { "type": "string" },
+        "quantity": { "type": "number" },
+        "averagePrice": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "portfolioId", "symbol", "exchange", "quantity", "averagePrice", "createdAt"]
+    },
+    "AIInsight": {
+      "title": "AIInsight",
+      "description": "Deep Mind AI generated insights for an asset",
+      "type": "object",
+      "properties": {
+        "symbol": { "type": "string" },
+        "signal": { "type": "string", "enum": ["BUY", "HOLD", "SELL", "STRONG BUY", "STRONG SELL"] },
+        "confidence": { "type": "number" },
+        "sentiment": { "type": "string" },
+        "reasoning": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["symbol", "signal", "confidence", "sentiment", "reasoning", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles."
+    },
+    "/portfolios/{portfolioId}": {
+      "schema": { "$ref": "#/entities/Portfolio" },
+      "description": "Stores user portfolios."
+    },
+    "/holdings/{holdingId}": {
+      "schema": { "$ref": "#/entities/Holding" },
+      "description": "Stores individual asset holdings."
+    },
+    "/ai_insights/{insightId}": {
+      "schema": { "$ref": "#/entities/AIInsight" },
+      "description": "Stores cached AI insights for assets."
+    }
+  }
+}
