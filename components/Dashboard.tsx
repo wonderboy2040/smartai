@@ -16,13 +16,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import TradingViewWidget from './TradingViewWidget';
-import { auth, db } from '@/lib/firebase';
+import { auth, db, loginAnonymously } from '@/lib/firebase';
 import { generateAIInsight, AIInsightResult } from '@/lib/ai';
 import { 
   collection, doc, setDoc, getDoc, serverTimestamp, 
   onSnapshot, query, where, addDoc, deleteDoc, orderBy 
 } from 'firebase/firestore';
-import { User } from 'firebase/auth';
+import { onAuthStateChanged, User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 
 // Mock Data for Portfolio Chart
@@ -52,13 +52,8 @@ const mockNews = [
 type SortKey = keyof typeof defaultHoldings[0];
 
 export default function Dashboard() {
-  const [user, setUser] = useState<User | null>({
-    uid: 'mock-user-id',
-    displayName: 'Mock User',
-    email: 'mock@user.com',
-    photoURL: '',
-  } as any);
-  const [isAuthReady, setIsAuthReady] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'signals' | 'settings'>('dashboard');
   const [marketIndices, setMarketIndices] = useState([
@@ -103,6 +98,38 @@ export default function Dashboard() {
   
   const [filterText, setFilterText] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' } | null>(null);
+
+  // Auth Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (!currentUser) {
+        loginAnonymously();
+      } else {
+        setUser(currentUser);
+        setIsAuthReady(true);
+        
+        const userRef = doc(db, 'users', currentUser.uid);
+        getDoc(userRef).then((docSnap) => {
+          if (!docSnap.exists()) {
+            setDoc(userRef, {
+              uid: currentUser.uid,
+              email: currentUser.email || 'anonymous',
+              displayName: currentUser.displayName || 'Anonymous User',
+              photoURL: currentUser.photoURL || '',
+              role: 'user',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp()
+            }).catch(e => console.error("Error creating user doc", e));
+          } else {
+            setDoc(userRef, {
+              updatedAt: serverTimestamp()
+            }, { merge: true }).catch(e => console.error("Error updating user doc", e));
+          }
+        }).catch(e => console.error("Error checking user doc", e));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Firestore Holdings Sync
   useEffect(() => {
