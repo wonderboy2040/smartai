@@ -16,13 +16,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import TradingViewWidget from './TradingViewWidget';
-import { auth, loginWithGoogle, logout, db } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { generateAIInsight, AIInsightResult } from '@/lib/ai';
 import { 
   collection, doc, setDoc, getDoc, serverTimestamp, 
   onSnapshot, query, where, addDoc, deleteDoc, orderBy 
 } from 'firebase/firestore';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 
 // Mock Data for Portfolio Chart
@@ -52,8 +52,13 @@ const mockNews = [
 type SortKey = keyof typeof defaultHoldings[0];
 
 export default function Dashboard() {
-  const [user, setUser] = useState<User | null>(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [user, setUser] = useState<User | null>({
+    uid: 'mock-user-id',
+    displayName: 'Mock User',
+    email: 'mock@user.com',
+    photoURL: '',
+  } as any);
+  const [isAuthReady, setIsAuthReady] = useState(true);
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'signals' | 'settings'>('dashboard');
   const [marketIndices, setMarketIndices] = useState([
@@ -98,39 +103,6 @@ export default function Dashboard() {
   
   const [filterText, setFilterText] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' } | null>(null);
-
-  // Auth Listener
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setIsAuthReady(true);
-      
-      if (currentUser) {
-        const userRef = doc(db, 'users', currentUser.uid);
-        getDoc(userRef).then((docSnap) => {
-          if (!docSnap.exists()) {
-            setDoc(userRef, {
-              uid: currentUser.uid,
-              email: currentUser.email || '',
-              displayName: currentUser.displayName || '',
-              photoURL: currentUser.photoURL || '',
-              role: 'user',
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp()
-            }).catch(e => console.error("Error creating user doc", e));
-          } else {
-            setDoc(userRef, {
-              email: currentUser.email || '',
-              displayName: currentUser.displayName || '',
-              photoURL: currentUser.photoURL || '',
-              updatedAt: serverTimestamp()
-            }, { merge: true }).catch(e => console.error("Error updating user doc", e));
-          }
-        }).catch(e => console.error("Error checking user doc", e));
-      }
-    });
-    return () => unsubscribe();
-  }, []);
 
   // Firestore Holdings Sync
   useEffect(() => {
@@ -352,12 +324,11 @@ export default function Dashboard() {
             Real-time market sentiment, 24/7 analysis, and multi-device cloud sync.
           </p>
           <Button 
-            onClick={loginWithGoogle}
             size="lg" 
             className="bg-white text-black hover:bg-gray-200 rounded-full px-8 py-6 text-lg font-medium transition-all hover:scale-105"
           >
             <Globe className="mr-2 h-5 w-5" />
-            Connect & Sync Devices
+            Get Started
           </Button>
         </motion.div>
       </div>
@@ -422,8 +393,8 @@ export default function Dashboard() {
               <p className="text-xs text-gray-500 truncate">{user.email}</p>
             </div>
           </div>
-          <Button variant="outline" size="sm" className="w-full border-white/10 text-gray-400 hover:text-white hover:bg-white/5" onClick={logout}>
-            <LogOut className="mr-2 h-4 w-4" /> Disconnect
+          <Button variant="outline" size="sm" className="w-full border-white/10 text-gray-400 hover:text-white hover:bg-white/5">
+            <Settings className="mr-2 h-4 w-4" /> Settings
           </Button>
         </div>
       </aside>
