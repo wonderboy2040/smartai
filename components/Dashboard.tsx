@@ -54,6 +54,7 @@ type SortKey = keyof typeof defaultHoldings[0];
 export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'signals' | 'settings'>('dashboard');
   const [marketIndices, setMarketIndices] = useState([
@@ -102,11 +103,26 @@ export default function Dashboard() {
   // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      console.log("Auth state changed:", currentUser);
       if (!currentUser) {
-        loginAnonymously();
+        if (!isLoggingIn) {
+          console.log("No user, logging in anonymously...");
+          setIsLoggingIn(true);
+          loginAnonymously().catch(e => {
+            console.error("Anonymous login failed", e);
+            if (e.code === 'auth/admin-restricted-operation') {
+              console.log("Anonymous login restricted, not retrying.");
+              // Do not set isLoggingIn to false, to stop retrying
+            } else {
+              setIsLoggingIn(false);
+            }
+          });
+        }
       } else {
+        console.log("User logged in:", currentUser.uid);
         setUser(currentUser);
         setIsAuthReady(true);
+        setIsLoggingIn(false);
         
         const userRef = doc(db, 'users', currentUser.uid);
         getDoc(userRef).then((docSnap) => {
@@ -129,7 +145,7 @@ export default function Dashboard() {
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [isLoggingIn]);
 
   // Firestore Holdings Sync
   useEffect(() => {
