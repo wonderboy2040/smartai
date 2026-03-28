@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import TradingViewWidget from './TradingViewWidget';
-import { auth, db, loginAnonymously } from '@/lib/firebase';
+import { auth, db, signInWithEmailAndPassword, createUserWithEmailAndPassword } from '@/lib/firebase';
 import { generateAIInsight, AIInsightResult } from '@/lib/ai';
 import { 
   collection, doc, setDoc, getDoc, serverTimestamp, 
@@ -99,53 +99,51 @@ export default function Dashboard() {
   
   const [filterText, setFilterText] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' } | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
 
   // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      console.log("Auth state changed:", currentUser);
-      if (!currentUser) {
-        if (!isLoggingIn) {
-          console.log("No user, logging in anonymously...");
-          setIsLoggingIn(true);
-          loginAnonymously().catch(e => {
-            console.error("Anonymous login failed", e);
-            if (e.code === 'auth/admin-restricted-operation') {
-              console.log("Anonymous login restricted, not retrying.");
-              // Do not set isLoggingIn to false, to stop retrying
-            } else {
-              setIsLoggingIn(false);
-            }
-          });
-        }
-      } else {
-        console.log("User logged in:", currentUser.uid);
+      if (currentUser) {
         setUser(currentUser);
         setIsAuthReady(true);
-        setIsLoggingIn(false);
         
         const userRef = doc(db, 'users', currentUser.uid);
         getDoc(userRef).then((docSnap) => {
           if (!docSnap.exists()) {
             setDoc(userRef, {
               uid: currentUser.uid,
-              email: currentUser.email || 'anonymous',
-              displayName: currentUser.displayName || 'Anonymous User',
+              email: currentUser.email || 'user',
+              displayName: currentUser.displayName || 'User',
               photoURL: currentUser.photoURL || '',
               role: 'user',
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp()
             }).catch(e => console.error("Error creating user doc", e));
-          } else {
-            setDoc(userRef, {
-              updatedAt: serverTimestamp()
-            }, { merge: true }).catch(e => console.error("Error updating user doc", e));
           }
         }).catch(e => console.error("Error checking user doc", e));
+      } else {
+        setUser(null);
+        setIsAuthReady(true);
       }
     });
     return () => unsubscribe();
-  }, [isLoggingIn]);
+  }, []);
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (isRegistering) {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (error: any) {
+      alert(error.message);
+    }
+  };
 
   // Firestore Holdings Sync
   useEffect(() => {
@@ -366,13 +364,38 @@ export default function Dashboard() {
             World-class portfolio management powered by advanced quantitative AI. 
             Real-time market sentiment, 24/7 analysis, and multi-device cloud sync.
           </p>
-          <Button 
-            size="lg" 
-            className="bg-white text-black hover:bg-gray-200 rounded-full px-8 py-6 text-lg font-medium transition-all hover:scale-105"
-          >
-            <Globe className="mr-2 h-5 w-5" />
-            Get Started
-          </Button>
+          <form onSubmit={handleAuth} className="flex flex-col gap-4 w-full max-w-sm">
+            <input 
+              type="email" 
+              placeholder="Email" 
+              value={email} 
+              onChange={(e) => setEmail(e.target.value)}
+              className="bg-white/5 border border-white/10 rounded-full px-6 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+              required
+            />
+            <input 
+              type="password" 
+              placeholder="Password" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)}
+              className="bg-white/5 border border-white/10 rounded-full px-6 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+              required
+            />
+            <Button 
+              type="submit"
+              size="lg" 
+              className="bg-white text-black hover:bg-gray-200 rounded-full px-8 py-6 text-lg font-medium transition-all hover:scale-105"
+            >
+              {isRegistering ? 'Register' : 'Login'}
+            </Button>
+            <button 
+              type="button"
+              onClick={() => setIsRegistering(!isRegistering)}
+              className="text-gray-400 hover:text-white text-sm mt-2"
+            >
+              {isRegistering ? 'Already have an account? Login' : 'Need an account? Register'}
+            </button>
+          </form>
         </motion.div>
       </div>
     );
