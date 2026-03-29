@@ -67,7 +67,13 @@ export async function generateAIInsight(symbol: string, exchange: string, retrie
       }
     });
 
-    const result = JSON.parse(response.text || "{}");
+    let result;
+    try {
+      result = JSON.parse(response.text || "{}");
+    } catch (e) {
+      console.error("Failed to parse AI insight JSON:", response.text, e);
+      result = {};
+    }
     
     const insightResult: AIInsightResult = {
       symbol,
