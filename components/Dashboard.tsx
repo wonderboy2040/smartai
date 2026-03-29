@@ -5,7 +5,7 @@ import {
 import { 
   Activity, TrendingUp, TrendingDown, DollarSign, Brain, 
   Globe, Zap, LayoutDashboard, Settings, LogOut, BarChart2,
-  ArrowUpDown, Search, Newspaper
+  ArrowUpDown, Search, Newspaper, Info
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import TradingViewWidget from './TradingViewWidget';
 import { auth, db, signInWithEmailAndPassword, createUserWithEmailAndPassword } from '@/lib/firebase';
 import { generateAIInsight, AIInsightResult } from '@/lib/ai';
@@ -58,14 +59,34 @@ export default function Dashboard() {
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'signals' | 'settings'>('dashboard');
   const [marketIndices, setMarketIndices] = useState([
-    { symbol: 'INDEX:SPX', name: 'S&P 500', exchange: 'US' },
-    { symbol: 'INDEX:NDX', name: 'Nasdaq 100', exchange: 'US' },
-    { symbol: 'NSE:NIFTY', name: 'Nifty 50', exchange: 'India' },
-    { symbol: 'BSE:SENSEX', name: 'Sensex', exchange: 'India' },
+    { symbol: 'INDEX:SPX', name: 'S&P 500', exchange: 'US', price: null, change: null },
+    { symbol: 'INDEX:NDX', name: 'Nasdaq 100', exchange: 'US', price: null, change: null },
+    { symbol: 'NSE:NIFTY', name: 'Nifty 50', exchange: 'India', price: null, change: null },
+    { symbol: 'BSE:SENSEX', name: 'Sensex', exchange: 'India', price: null, change: null },
   ]);
   const [selectedMarketIndex, setSelectedMarketIndex] = useState(marketIndices[0]);
   const [selectedMarketPrice, setSelectedMarketPrice] = useState<{ price: number, change: number } | null>(null);
   
+  useEffect(() => {
+    const fetchMarketPrices = async () => {
+      const updatedIndices = await Promise.all(marketIndices.map(async (index) => {
+        try {
+          const response = await fetch(`/api/price/${index.symbol}`);
+          const data = await response.json();
+          return { ...index, price: data.price || null, change: data.change || null };
+        } catch (error) {
+          console.error(`Error fetching price for ${index.symbol}:`, error);
+          return index;
+        }
+      }));
+      setMarketIndices(updatedIndices);
+    };
+
+    fetchMarketPrices();
+    const interval = setInterval(fetchMarketPrices, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     const fetchMarketPrice = async () => {
       try {
@@ -213,16 +234,24 @@ export default function Dashboard() {
       // Create a map of new prices
       const prices: Record<string, number> = {};
       for (const h of currentHoldings) {
-        try {
-          const response = await fetch(`/api/price/${h.symbol}`);
-          if (!response.ok) {
-            console.error(`Failed to fetch price for ${h.symbol}: ${response.statusText}`);
-            continue;
+        let retries = 2;
+        while (retries >= 0) {
+          try {
+            const response = await fetch(`/api/price/${h.symbol}`);
+            if (!response.ok) {
+              throw new Error(`Failed to fetch price for ${h.symbol}: ${response.statusText}`);
+            }
+            const data = await response.json();
+            if (data.price) {
+              prices[h.symbol] = data.price;
+              break; // Success
+            }
+          } catch (error) {
+            console.error(`Error fetching price for ${h.symbol} (retries left: ${retries}):`, error);
+            if (retries === 0) break;
+            retries--;
+            await new Promise(resolve => setTimeout(resolve, 2000));
           }
-          const data = await response.json();
-          if (data.price) prices[h.symbol] = data.price;
-        } catch (error) {
-          console.error(`Error fetching price for ${h.symbol}:`, error);
         }
       }
 
@@ -248,7 +277,10 @@ export default function Dashboard() {
     const fetchAllInsights = async () => {
       for (const asset of holdings) {
         if (!isMounted) break;
-        if (allInsights[asset.symbol]) continue; // Skip if already fetched
+        
+        // Check if insight exists and is less than 5 minutes old
+        const insight = allInsights[asset.symbol];
+        if (insight && (Date.now() - new Date(insight.timestamp).getTime() < 5 * 60 * 1000)) continue;
         
         setAnalyzingState(prev => ({ ...prev, [asset.symbol]: true }));
         try {
@@ -258,8 +290,7 @@ export default function Dashboard() {
           }
         } catch (error: any) {
           console.error(`Failed to fetch insight for ${asset.symbol}:`, error);
-          if (error.status === 429 || error.message?.includes('429')) {
-            console.warn("Rate limit exceeded. Stopping AI analysis.");
+          if (error.message?.includes('AI quota exhausted')) {
             setAnalyzingState(prev => ({ ...prev, [asset.symbol]: false }));
             break; // Stop the loop
           }
@@ -275,6 +306,12 @@ export default function Dashboard() {
 
     if (user && holdings.length > 0) {
       fetchAllInsights();
+      // Set interval to refresh every 5 minutes
+      const interval = setInterval(fetchAllInsights, 5 * 60 * 1000);
+      return () => {
+        isMounted = false;
+        clearInterval(interval);
+      };
     }
     return () => { isMounted = false; };
   }, [user, holdings]);
@@ -332,6 +369,11 @@ export default function Dashboard() {
       direction = 'desc';
     }
     setSortConfig({ key, direction });
+  };
+
+  const getSortIcon = (key: SortKey) => {
+    if (sortConfig?.key !== key) return <ArrowUpDown className="ml-2 h-3 w-3 text-gray-500" />;
+    return sortConfig.direction === 'asc' ? <TrendingUp className="ml-2 h-3 w-3 text-blue-500" /> : <TrendingDown className="ml-2 h-3 w-3 text-blue-500" />;
   };
 
   const filteredAndSortedHoldings = useMemo(() => {
@@ -635,19 +677,19 @@ export default function Dashboard() {
                         <TableHeader className="bg-black/40">
                           <TableRow className="border-white/10 hover:bg-transparent">
                             <TableHead className="text-gray-400 cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('symbol')}>
-                              <div className="flex items-center">Asset <ArrowUpDown className="ml-2 h-3 w-3" /></div>
+                              <div className="flex items-center">Asset {getSortIcon('symbol')}</div>
                             </TableHead>
                             <TableHead className="text-gray-400 text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('quantity')}>
-                              <div className="flex items-center justify-end">Quantity <ArrowUpDown className="ml-2 h-3 w-3" /></div>
+                              <div className="flex items-center justify-end">Quantity {getSortIcon('quantity')}</div>
                             </TableHead>
                             <TableHead className="text-gray-400 text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('avgPrice')}>
-                              <div className="flex items-center justify-end">Avg Price <ArrowUpDown className="ml-2 h-3 w-3" /></div>
+                              <div className="flex items-center justify-end">Avg Price {getSortIcon('avgPrice')}</div>
                             </TableHead>
                             <TableHead className="text-gray-400 text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('currentPrice')}>
-                              <div className="flex items-center justify-end">Current Price <ArrowUpDown className="ml-2 h-3 w-3" /></div>
+                              <div className="flex items-center justify-end">Current Price {getSortIcon('currentPrice')}</div>
                             </TableHead>
                             <TableHead className="text-gray-400 text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('change')}>
-                              <div className="flex items-center justify-end">Return <ArrowUpDown className="ml-2 h-3 w-3" /></div>
+                              <div className="flex items-center justify-end">Return {getSortIcon('change')}</div>
                             </TableHead>
                             <TableHead className="text-gray-400 text-center">AI Signal</TableHead>
                             <TableHead className="text-gray-400 text-right">Action</TableHead>
@@ -689,13 +731,22 @@ export default function Dashboard() {
                                       <div className="w-4 h-4 rounded-full border-2 border-blue-500/30 border-t-blue-500 animate-spin"></div>
                                     </div>
                                   ) : insight ? (
-                                    <Badge className={
-                                      insight.signal.includes('BUY') ? 'bg-green-500/20 text-green-400 border-green-500/50' :
-                                      insight.signal.includes('SELL') ? 'bg-red-500/20 text-red-400 border-red-500/50' :
-                                      'bg-yellow-500/20 text-yellow-400 border-yellow-500/50'
-                                    }>
-                                      {insight.signal}
-                                    </Badge>
+                                    <UITooltip>
+                                      <TooltipTrigger className="flex items-center justify-center gap-1">
+                                        <Badge className={
+                                          insight.signal.includes('BUY') ? 'bg-green-500/20 text-green-400 border-green-500/50' :
+                                          insight.signal.includes('SELL') ? 'bg-red-500/20 text-red-400 border-red-500/50' :
+                                          'bg-yellow-500/20 text-yellow-400 border-yellow-500/50'
+                                        }>
+                                          {insight.signal}
+                                        </Badge>
+                                        <Info className="h-3 w-3 text-gray-500" />
+                                      </TooltipTrigger>
+                                      <TooltipContent className="bg-[#111] border-white/10 text-white p-4 max-w-xs">
+                                        <p className="font-bold mb-1">Confidence: {insight.confidence}%</p>
+                                        <p className="text-sm text-gray-300">{insight.reasoning}</p>
+                                      </TooltipContent>
+                                    </UITooltip>
                                   ) : (
                                     <span className="text-xs text-gray-500">Pending</span>
                                   )}
@@ -736,6 +787,14 @@ export default function Dashboard() {
                         <p className="text-xs text-gray-500 mb-1">{index.exchange}</p>
                         <h4 className="font-bold">{index.name}</h4>
                         <p className="text-xs text-gray-400">{index.symbol}</p>
+                        {index.price !== null && (
+                          <div className="mt-2 text-sm font-semibold">
+                            ${index.price.toLocaleString()} 
+                            <span className={`ml-2 ${index.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {index.change >= 0 ? '+' : ''}{index.change}%
+                            </span>
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   ))}
