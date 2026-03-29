@@ -141,7 +141,9 @@ export default function Dashboard() {
         await signInWithEmailAndPassword(auth, email, password);
       }
     } catch (error: any) {
-      alert(error.message);
+      console.error("Authentication error:", error);
+      const message = error.message || "An unknown error occurred during authentication.";
+      alert(message);
     }
   };
 
@@ -163,20 +165,8 @@ export default function Dashboard() {
         ...doc.data()
       }));
       
-      // If no holdings exist, seed with defaults for first-time users
-      if (holdingsData.length === 0 && user) {
-        defaultHoldings.forEach(async (h) => {
-          const { id, ...rest } = h;
-          await addDoc(collection(db, 'holdings'), {
-            ...rest,
-            uid: user.uid,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
-          });
-        });
-      } else {
-        setHoldings(holdingsData);
-      }
+      // If no holdings exist, show empty state (no seeding)
+      setHoldings(holdingsData);
     }, (error) => {
       console.error("Error fetching holdings:", error);
     });
@@ -822,71 +812,72 @@ export default function Dashboard() {
             <DialogTitle>Add New Asset</DialogTitle>
             <DialogDescription>Enter the details of your ETF or Stock holding.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleAddAsset} className="space-y-4 pt-4">
-            <div className="grid grid-cols-2 gap-4">
+          <form onSubmit={handleAddAsset} className="space-y-6 pt-4">
+            <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm text-gray-400">Symbol</label>
+                <label className="text-sm text-gray-400 font-medium">Asset Symbol</label>
                 <Input 
                   required
-                  placeholder="e.g. SPY, NIFTYBEES" 
-                  className="bg-black border-white/10"
+                  placeholder="e.g. AAPL, BTC, RELIANCE" 
+                  className="bg-black border-white/20 focus:border-blue-500 transition-colors"
                   value={newAsset.symbol}
                   onChange={e => setNewAsset({...newAsset, symbol: e.target.value})}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-gray-400">Exchange</label>
+                <label className="text-sm text-gray-400 font-medium">Asset Name</label>
+                <Input 
+                  placeholder="Optional: e.g. Apple Inc." 
+                  className="bg-black border-white/20 focus:border-blue-500 transition-colors"
+                  value={newAsset.name}
+                  onChange={e => setNewAsset({...newAsset, name: e.target.value})}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm text-gray-400 font-medium">Exchange</label>
                 <select 
-                  className="w-full h-10 bg-black border border-white/10 rounded-md px-3 text-sm"
+                  className="w-full h-10 bg-black border border-white/20 rounded-md px-3 text-sm focus:border-blue-500 transition-colors"
                   value={newAsset.exchange}
                   onChange={e => setNewAsset({...newAsset, exchange: e.target.value})}
                 >
-                  <option value="AMEX">AMEX (US)</option>
-                  <option value="NASDAQ">NASDAQ (US)</option>
-                  <option value="NYSE">NYSE (US)</option>
+                  <option value="NASDAQ">NASDAQ</option>
+                  <option value="NYSE">NYSE</option>
+                  <option value="AMEX">AMEX</option>
                   <option value="NSE">NSE (India)</option>
                   <option value="BSE">BSE (India)</option>
+                  <option value="CRYPTO">CRYPTO</option>
                 </select>
               </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm text-gray-400">Asset Name</label>
-              <Input 
-                placeholder="e.g. SPDR S&P 500 ETF" 
-                className="bg-black border-white/10"
-                value={newAsset.name}
-                onChange={e => setNewAsset({...newAsset, name: e.target.value})}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm text-gray-400">Quantity</label>
-                <Input 
-                  required
-                  type="number"
-                  step="any"
-                  placeholder="0.00" 
-                  className="bg-black border-white/10"
-                  value={newAsset.quantity}
-                  onChange={e => setNewAsset({...newAsset, quantity: e.target.value})}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm text-gray-400">Avg Buy Price</label>
-                <Input 
-                  required
-                  type="number"
-                  step="any"
-                  placeholder="0.00" 
-                  className="bg-black border-white/10"
-                  value={newAsset.avgPrice}
-                  onChange={e => setNewAsset({...newAsset, avgPrice: e.target.value})}
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-400 font-medium">Quantity</label>
+                  <Input 
+                    required
+                    type="number"
+                    step="any"
+                    placeholder="0.00" 
+                    className="bg-black border-white/20 focus:border-blue-500 transition-colors"
+                    value={newAsset.quantity}
+                    onChange={e => setNewAsset({...newAsset, quantity: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-400 font-medium">Avg Buy Price ($)</label>
+                  <Input 
+                    required
+                    type="number"
+                    step="any"
+                    placeholder="0.00" 
+                    className="bg-black border-white/20 focus:border-blue-500 transition-colors"
+                    value={newAsset.avgPrice}
+                    onChange={e => setNewAsset({...newAsset, avgPrice: e.target.value})}
+                  />
+                </div>
               </div>
             </div>
-            <div className="pt-4 flex justify-end gap-3">
-              <Button type="button" variant="ghost" onClick={() => setIsAddAssetOpen(false)}>Cancel</Button>
-              <Button type="submit" className="bg-blue-600 hover:bg-blue-700">Add to Portfolio</Button>
+            <div className="pt-2 flex justify-end gap-3">
+              <Button type="button" variant="ghost" onClick={() => setIsAddAssetOpen(false)} className="text-gray-400 hover:text-white">Cancel</Button>
+              <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6">Add Asset</Button>
             </div>
           </form>
         </DialogContent>
