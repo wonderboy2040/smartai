@@ -103,6 +103,33 @@ export default function Dashboard() {
   const [password, setPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
 
+  const portfolioSummary = useMemo(() => {
+    let totalIndiaValue = 0;
+    let totalUSAValue = 0;
+    let totalIndiaCost = 0;
+    let totalUSACost = 0;
+
+    holdings.forEach(h => {
+      const isIndia = ['NSE', 'BSE'].includes(h.exchange);
+      const value = h.currentPrice * h.quantity;
+      const cost = h.avgPrice * h.quantity;
+
+      if (isIndia) {
+        totalIndiaValue += value;
+        totalIndiaCost += cost;
+      } else {
+        totalUSAValue += value;
+        totalUSACost += cost;
+      }
+    });
+
+    return {
+      india: { value: totalIndiaValue, pnl: totalIndiaValue - totalIndiaCost },
+      usa: { value: totalUSAValue, pnl: totalUSAValue - totalUSACost },
+      totalPnl: (totalIndiaValue - totalIndiaCost) + (totalUSAValue - totalUSACost)
+    };
+  }, [holdings]);
+
   // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -188,6 +215,10 @@ export default function Dashboard() {
       for (const h of currentHoldings) {
         try {
           const response = await fetch(`/api/price/${h.symbol}`);
+          if (!response.ok) {
+            console.error(`Failed to fetch price for ${h.symbol}: ${response.statusText}`);
+            continue;
+          }
           const data = await response.json();
           if (data.price) prices[h.symbol] = data.price;
         } catch (error) {
@@ -391,10 +422,7 @@ export default function Dashboard() {
     );
   }
 
-  const totalValue = holdings.reduce((sum, h) => sum + (h.currentPrice * h.quantity), 0);
-  const totalCost = holdings.reduce((sum, h) => sum + (h.avgPrice * h.quantity), 0);
-  const totalReturn = totalValue - totalCost;
-  const totalReturnPct = (totalReturn / totalCost) * 100;
+  // ... (rest of the component)
 
   return (
     <div className="min-h-screen bg-[#050505] text-white font-sans flex">
@@ -493,19 +521,31 @@ export default function Dashboard() {
               <>
                 {/* Top Stats Row */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <Card className="bg-[#111] border-white/10 overflow-hidden relative group">
-                    <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                  <Card className="bg-[#111] border-white/10 overflow-hidden relative group col-span-2">
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-400 flex items-center">
-                        <DollarSign className="w-4 h-4 mr-1" /> Total Value
-                      </CardTitle>
+                      <CardTitle className="text-sm font-medium text-gray-400">Portfolio Summary</CardTitle>
                     </CardHeader>
-                    <CardContent>
-                      <div className="text-3xl font-bold tracking-tight">${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                      <p className={`text-sm flex items-center mt-1 ${totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {totalReturn >= 0 ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}
-                        {totalReturn >= 0 ? '+' : ''}${totalReturn.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({totalReturnPct.toFixed(2)}%) All Time
-                      </p>
+                    <CardContent className="grid grid-cols-3 gap-4">
+                      <div>
+                        <p className="text-xs text-gray-500">Total P&L</p>
+                        <div className={`text-xl font-bold ${portfolioSummary.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {portfolioSummary.totalPnl >= 0 ? '+' : ''}{portfolioSummary.totalPnl.toFixed(2)}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">India (₹)</p>
+                        <div className="text-lg font-mono">₹{portfolioSummary.india.value.toLocaleString()}</div>
+                        <div className={`text-xs ${portfolioSummary.india.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {portfolioSummary.india.pnl >= 0 ? '+' : ''}{portfolioSummary.india.pnl.toFixed(2)}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">USA ($)</p>
+                        <div className="text-lg font-mono">${portfolioSummary.usa.value.toLocaleString()}</div>
+                        <div className={`text-xs ${portfolioSummary.usa.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {portfolioSummary.usa.pnl >= 0 ? '+' : ''}{portfolioSummary.usa.pnl.toFixed(2)}
+                        </div>
+                      </div>
                     </CardContent>
                   </Card>
 
