@@ -67,6 +67,7 @@ export default function Dashboard() {
   const [selectedMarketIndex, setSelectedMarketIndex] = useState(marketIndices[0]);
   const [selectedMarketPrice, setSelectedMarketPrice] = useState<{ price: number, change: number } | null>(null);
   
+  /*
   useEffect(() => {
     const fetchMarketPrices = async () => {
       const updatedIndices = await Promise.all(marketIndices.map(async (index) => {
@@ -86,7 +87,9 @@ export default function Dashboard() {
     const interval = setInterval(fetchMarketPrices, 60000);
     return () => clearInterval(interval);
   }, []);
+  */
 
+  /*
   useEffect(() => {
     const fetchMarketPrice = async () => {
       try {
@@ -101,6 +104,7 @@ export default function Dashboard() {
     };
     fetchMarketPrice();
   }, [selectedMarketIndex]);
+  */
   
   const [holdings, setHoldings] = useState<any[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<any | null>(null);
@@ -222,55 +226,50 @@ export default function Dashboard() {
     return () => unsubscribe();
   }, [user]);
 
-  const holdingsRef = React.useRef(holdings);
-  useEffect(() => {
-    holdingsRef.current = holdings;
-  }, [holdings]);
+  const ws = React.useRef<WebSocket | null>(null);
 
-  // Real-time Price Fetching
   useEffect(() => {
-    const fetchPrices = async () => {
-      const currentHoldings = holdingsRef.current;
-      // Create a map of new prices
-      const prices: Record<string, number> = {};
-      for (const h of currentHoldings) {
-        let retries = 2;
-        while (retries >= 0) {
-          try {
-            const response = await fetch(`/api/price/${h.symbol}`);
-            if (!response.ok) {
-              const errorBody = await response.text();
-              throw new Error(`Failed to fetch price for ${h.symbol}: ${response.status} ${response.statusText} - ${errorBody}`);
-            }
-            const data = await response.json();
-            if (data.price) {
-              prices[h.symbol] = data.price;
-              break; // Success
-            }
-          } catch (error) {
-            console.error(`Error fetching price for ${h.symbol} (retries left: ${retries}):`, error);
-            if (retries === 0) break;
-            retries--;
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-        }
-      }
-
-      // Update holdings with new prices
-      setHoldings(prev => prev.map(h => {
-        if (prices[h.symbol]) {
-          const newPrice = prices[h.symbol];
-          const newChange = ((newPrice - h.avgPrice) / h.avgPrice) * 100;
-          return { ...h, currentPrice: newPrice, change: newChange };
-        }
-        return h;
-      }));
+    ws.current = new WebSocket(`wss://${window.location.host}`);
+    
+    ws.current.onopen = () => {
+      console.log("Connected to price server");
+      // Subscribe to all holdings
+      holdings.forEach(h => {
+        ws.current?.send(JSON.stringify({ type: "subscribe", symbol: h.symbol }));
+      });
+      // Subscribe to all market indices
+      marketIndices.forEach(i => {
+        ws.current?.send(JSON.stringify({ type: "subscribe", symbol: i.symbol }));
+      });
     };
 
-    const interval = setInterval(fetchPrices, 60000); // Fetch every minute
-    fetchPrices(); // Initial fetch
-    return () => clearInterval(interval);
-  }, []); // Run only once on mount
+    ws.current.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === "trade") {
+        const symbol = data.data[0].s;
+        const price = data.data[0].p;
+        
+        // Update holdings
+        setHoldings(prev => prev.map(h => {
+          if (h.symbol === symbol) {
+            const newChange = ((price - h.avgPrice) / h.avgPrice) * 100;
+            return { ...h, currentPrice: price, change: newChange };
+          }
+          return h;
+        }));
+
+        // Update market indices
+        setMarketIndices(prev => prev.map(i => {
+          if (i.symbol === symbol) {
+            return { ...i, price: price };
+          }
+          return i;
+        }));
+      }
+    };
+
+    return () => ws.current?.close();
+  }, [holdings, marketIndices]); // Re-subscribe if holdings or indices change
 
   // Fetch AI Insights for all holdings sequentially to avoid rate limits
   useEffect(() => {
