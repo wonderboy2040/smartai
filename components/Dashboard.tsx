@@ -239,7 +239,8 @@ export default function Dashboard() {
           try {
             const response = await fetch(`/api/price/${h.symbol}`);
             if (!response.ok) {
-              throw new Error(`Failed to fetch price for ${h.symbol}: ${response.statusText}`);
+              const errorBody = await response.text();
+              throw new Error(`Failed to fetch price for ${h.symbol}: ${response.status} ${response.statusText} - ${errorBody}`);
             }
             const data = await response.json();
             if (data.price) {
