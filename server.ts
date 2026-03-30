@@ -1,38 +1,16 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import fetch from "node-fetch";
+import { WebSocketServer, WebSocket } from "ws";
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // API routes
-  app.get("/api/price/:symbol", async (req, res) => {
-    const { symbol } = req.params;
-    const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
-    
-    if (!apiKey) {
-      return res.status(500).json({ error: "API key not configured" });
-    }
-
-    try {
-      const response = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${apiKey}`);
-      const data = await response.json();
-      
-      if (data["Global Quote"] && data["Global Quote"]["05. price"]) {
-        res.json({ price: parseFloat(data["Global Quote"]["05. price"]) });
-      } else {
-        res.status(404).json({ error: "Price not found" });
-      }
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch price" });
-    }
-  });
-
   // Vite middleware for development
+  let vite: any;
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
+    vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
@@ -45,9 +23,59 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+
+  // WebSocket Server
+  const wss = new WebSocketServer({ server });
+  const finnhubApiKey = process.env.FINNHUB_API_KEY;
+
+  if (!finnhubApiKey) {
+    console.error("FINNHUB_API_KEY not configured");
+  } else {
+    const connectFinnhub = () => {
+      const finnhubSocket = new WebSocket(`wss://ws.finnhub.io?token=${finnhubApiKey}`);
+
+      finnhubSocket.on("open", () => {
+        console.log("Connected to Finnhub");
+      });
+
+      finnhubSocket.on("message", (data) => {
+        // Broadcast to all connected clients
+        wss.clients.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(data.toString());
+          }
+        });
+      });
+
+      finnhubSocket.on("close", () => {
+        console.log("Finnhub disconnected, reconnecting in 5s...");
+        setTimeout(connectFinnhub, 5000);
+      });
+
+      finnhubSocket.on("error", (err) => {
+        console.error("Finnhub error:", err);
+        finnhubSocket.close();
+      });
+      
+      return finnhubSocket;
+    };
+
+    let finnhubSocket = connectFinnhub();
+
+    wss.on("connection", (ws) => {
+      ws.on("message", (message) => {
+        const parsed = JSON.parse(message.toString());
+        if (parsed.type === "subscribe") {
+          finnhubSocket.send(JSON.stringify({ type: "subscribe", symbol: parsed.symbol }));
+        } else if (parsed.type === "unsubscribe") {
+          finnhubSocket.send(JSON.stringify({ type: "unsubscribe", symbol: parsed.symbol }));
+        }
+      });
+    });
+  }
 }
 
 startServer();
