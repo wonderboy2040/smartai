@@ -227,6 +227,7 @@ export default function Dashboard() {
   }, [user]);
 
   const ws = React.useRef<WebSocket | null>(null);
+  const subscribedSymbols = React.useRef(new Set<string>());
 
   useEffect(() => {
     ws.current = new WebSocket(`wss://${window.location.host}`);
@@ -235,11 +236,17 @@ export default function Dashboard() {
       console.log("Connected to price server");
       // Subscribe to all holdings
       holdings.forEach(h => {
-        ws.current?.send(JSON.stringify({ type: "subscribe", symbol: h.symbol }));
+        if (!subscribedSymbols.current.has(h.symbol)) {
+          ws.current?.send(JSON.stringify({ type: "subscribe", symbol: h.symbol }));
+          subscribedSymbols.current.add(h.symbol);
+        }
       });
       // Subscribe to all market indices
       marketIndices.forEach(i => {
-        ws.current?.send(JSON.stringify({ type: "subscribe", symbol: i.symbol }));
+        if (!subscribedSymbols.current.has(i.symbol)) {
+          ws.current?.send(JSON.stringify({ type: "subscribe", symbol: i.symbol }));
+          subscribedSymbols.current.add(i.symbol);
+        }
       });
     };
 
@@ -269,7 +276,25 @@ export default function Dashboard() {
     };
 
     return () => ws.current?.close();
-  }, [holdings, marketIndices]); // Re-subscribe if holdings or indices change
+  }, []); // Only run once on mount
+
+  // Handle new subscriptions when holdings or marketIndices change
+  useEffect(() => {
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      holdings.forEach(h => {
+        if (!subscribedSymbols.current.has(h.symbol)) {
+          ws.current?.send(JSON.stringify({ type: "subscribe", symbol: h.symbol }));
+          subscribedSymbols.current.add(h.symbol);
+        }
+      });
+      marketIndices.forEach(i => {
+        if (!subscribedSymbols.current.has(i.symbol)) {
+          ws.current?.send(JSON.stringify({ type: "subscribe", symbol: i.symbol }));
+          subscribedSymbols.current.add(i.symbol);
+        }
+      });
+    }
+  }, [holdings, marketIndices]);
 
   // Fetch AI Insights for all holdings sequentially to avoid rate limits
   useEffect(() => {
